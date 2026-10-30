@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101522"><title>Candidate Speaking Timer</title>
+<style>
+:root{color-scheme:dark;--bg:#101522;--panel:#1b2435;--line:#344158;--muted:#aab5c8;--accent:#9aaaff}
+*{box-sizing:border-box}body{margin:0;padding:20px;background:radial-gradient(circle at top,#253451,#101522 60%);color:#f5f7ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:720px;margin:auto}h1{font-size:clamp(1.4rem,5vw,2rem);margin:0}.muted{color:var(--muted)}.card{background:#1b2435ed;border:1px solid var(--line);border-radius:20px;padding:20px;margin-top:16px;box-shadow:0 15px 45px #0004}
+label{display:block;color:var(--muted);font-size:.85rem;margin:0 0 7px}input{width:100%;padding:13px;border-radius:12px;border:1px solid var(--line);background:#111a29;color:#fff;font:inherit}
+.clock{text-align:center;font-size:clamp(5rem,19vw,7rem);font-weight:800;letter-spacing:-.07em;font-variant-numeric:tabular-nums;margin:15px 0 0}.status{text-align:center;color:var(--muted);min-height:25px;margin-bottom:18px}
+.bells{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:15px 0 20px}.bell{background:#141c2b;border:1px solid var(--line);border-radius:13px;text-align:center;padding:12px 5px}.bell b{display:block;font-size:1.15rem}.bell small{color:var(--muted)}.bell.done{border-color:#8eddb2;background:#183329}
+.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btn{border:0;border-radius:13px;padding:14px 12px;font:inherit;font-weight:750;cursor:pointer}.start{grid-column:1/-1;background:var(--accent);color:#12182a}.secondary{background:#354158;color:#fff}.btn:disabled{opacity:.4;cursor:not-allowed}
+h2{font-size:1.1rem;margin:0 0 13px}.addrow{display:grid;grid-template-columns:1fr auto;gap:8px}.candidate{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:13px 12px;background:#141c2b;border:1px solid var(--line);border-radius:12px;margin-top:8px}.candidate strong{overflow-wrap:anywhere}.time{font-size:1.05rem;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}.empty{text-align:center;color:var(--muted);padding:18px 4px}.foot{font-size:.78rem;line-height:1.5;color:var(--muted);margin-top:14px}
+</style></head>
+<body><main>
+<h1>Candidate Speaking Timer</h1><div class="muted">Three bells · Simple time recording</div>
+<section class="card">
+ <label for="name">Candidate name</label>
+ <div class="addrow"><input id="name" placeholder="Enter candidate name"><button class="btn secondary" id="select">Select</button></div>
+ <div class="clock" id="clock">00:00</div><div class="status" id="status">Select a candidate and press Start</div>
+ <div class="bells">
+  <div class="bell" id="b1"><b>2:00</b><small>Short bell</small></div>
+  <div class="bell" id="b2"><b>2:30</b><small>Long bell</small></div>
+  <div class="bell" id="b3"><b>3:00</b><small>Final bell</small></div>
+ </div>
+ <div class="buttons">
+  <button class="btn start" id="start" disabled>Start</button>
+  <button class="btn secondary" id="stop" disabled>Stop & Save Time</button>
+  <button class="btn secondary" id="reset" disabled>Reset</button>
+ </div>
+ <div class="foot">At 3:00, the final bell rings and that candidate's time is saved automatically. You can also stop earlier to save the actual speaking time.</div>
+</section>
+<section class="card">
+ <h2>Candidate speaking times</h2>
+ <div id="list"><div class="empty">Candidate times will appear here.</div></div>
+ <div class="buttons" style="margin-top:14px"><button class="btn secondary" id="csv">Download time list</button><button class="btn secondary" id="clear">Clear list</button></div>
+</section>
+<div class="foot">Times are saved in this browser on this device. Keep the page open and screen awake during the event; mobile browsers may pause timers when locked or backgrounded.</div>
+</main>
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+let records=JSON.parse(localStorage.getItem('candidateSpeakingTimes')||'[]');
+let name='',running=false,elapsed=0,started=0,raf=0,fired=new Set(),ctx=null,hasRun=false;
+const fmt=ms=>{let s=Math.floor(ms/1000);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
+function render(){let list=$('list');list.innerHTML='';if(!records.length){list.innerHTML='<div class="empty">Candidate times will appear here.</div>';return}records.forEach((r,i)=>{let d=document.createElement('div');d.className='candidate';let n=document.createElement('strong');n.textContent=r.name;let t=document.createElement('span');t.className='time';t.textContent=fmt(r.ms);d.append(n,t);list.append(d)})}
+function sound(type){try{ctx=ctx||new(window.AudioContext||window.webkitAudioContext)();if(ctx.state==='suspended')ctx.resume();let delays=type===1?[0]:type===2?[0,250]:[0,240,480,720];delays.forEach(delay=>{let t=ctx.currentTime+delay/1000,o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=type===1?760:type===2?880:1040;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.48,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+(type===1?.35:.58));o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+(type===1?.37:.6))})}catch(e){$('status').textContent='Sound unavailable — check browser audio settings'}}
+function elapsedNow(){return elapsed+(running?performance.now()-started:0)}
+function update(){let e=elapsedNow();$('clock').textContent=fmt(e);[[120000,1],[150000,2],[180000,3]].forEach(([at,k])=>{if(e>=at&&!fired.has(k)){fired.add(k);sound(k);$('b'+k).classList.add('done');$('status').textContent=k===1?'2 minutes — short bell':k===2?'2 minutes 30 seconds — start concluding':'3 minutes — time is over';if(k===3)saveTime()}});if(running)raf=requestAnimationFrame(update)}
+function start(){if(!name.trim()||running||hasRun)return;running=true;started=performance.now();$('status').textContent='Speaking…';$('start').textContent='Running';$('stop').disabled=false;$('reset').disabled=false;raf=requestAnimationFrame(update)}
+function saveTime(){if(!hasRun){elapsed=180000;running=false;hasRun=true;cancelAnimationFrame(raf);records.push({name:name.trim(),ms:elapsed});localStorage.setItem('candidateSpeakingTimes',JSON.stringify(records));$('status').textContent='3 minutes — time saved';$('start').disabled=true;$('stop').disabled=true;render()}}
+function stop(){if(!running)return;elapsed=elapsedNow();running=false;cancelAnimationFrame(raf);hasRun=true;records.push({name:name.trim(),ms:elapsed});localStorage.setItem('candidateSpeakingTimes',JSON.stringify(records));$('status').textContent='Time saved: '+fmt(elapsed);$('start').disabled=true;$('stop').disabled=true;render();$('clock').textContent=fmt(elapsed)}
+function reset(){running=false;cancelAnimationFrame(raf);elapsed=0;started=0;fired.clear();hasRun=false;$('clock').textContent='00:00';$('status').textContent=name?'Ready for '+name:'Select a candidate and press Start';[1,2,3].forEach(k=>$('b'+k).classList.remove('done'));$('start').disabled=!name;$('start').textContent='Start';$('stop').disabled=true;$('reset').disabled=!name}
+$('select').onclick=()=>{if(running)return alert('Stop the current timer first.');name=$('name').value.trim();if(!name)return alert('Enter a candidate name.');reset()};
+$('name').addEventListener('keydown',e=>{if(e.key==='Enter')$('select').click()});
+$('start').onclick=start;$('stop').onclick=stop;$('reset').onclick=reset;
+$('csv').onclick=()=>{let csv=[['Candidate','Speaking time'],...records.map(r=>[r.name,fmt(r.ms)])].map(row=>row.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='candidate-speaking-times.csv';a.click();URL.revokeObjectURL(a.href)};
+$('clear').onclick=()=>{if(confirm('Clear all candidate speaking times?')){records=[];localStorage.removeItem('candidateSpeakingTimes');render()}};
+render();
+})();
+</script></body></html>
