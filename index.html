@@ -45,9 +45,29 @@ let records=JSON.parse(localStorage.getItem('candidateSpeakingTimes')||'[]');
 let name='',running=false,elapsed=0,started=0,raf=0,fired=new Set(),ctx=null,hasRun=false;
 const fmt=ms=>{let s=Math.floor(ms/1000);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
 function render(){let list=$('list');list.innerHTML='';if(!records.length){list.innerHTML='<div class="empty">Candidate times will appear here.</div>';return}records.forEach((r,i)=>{let d=document.createElement('div');d.className='candidate';let n=document.createElement('strong');n.textContent=r.name;let t=document.createElement('span');t.className='time';t.textContent=fmt(r.ms);d.append(n,t);list.append(d)})}
-function sound(type){try{ctx=ctx||new(window.AudioContext||window.webkitAudioContext)();if(ctx.state==='suspended')ctx.resume();let delays=type===1?[0]:type===2?[0,250]:[0,240,480,720];delays.forEach(delay=>{let t=ctx.currentTime+delay/1000,o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=type===1?760:type===2?880:1040;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.48,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+(type===1?.35:.58));o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+(type===1?.37:.6))})}catch(e){$('status').textContent='Sound unavailable — check browser audio settings'}}
+function sound(type){
+ try{
+  ctx=ctx||new(window.AudioContext||window.webkitAudioContext)();
+  if(ctx.state==='suspended')ctx.resume();
+  // Sustained, louder bell: 3s / 4.5s / 6s at the three checkpoints.
+  const duration=type===1?3.0:type===2?4.5:6.0;
+  const fundamental=type===1?880:type===2?784:659;
+  const t=ctx.currentTime;
+  [[1,.92],[2.01,.34],[2.98,.16],[4.08,.075]].forEach(([ratio,level])=>{
+   const o=ctx.createOscillator(),g=ctx.createGain(),filter=ctx.createBiquadFilter();
+   o.type='sine';o.frequency.setValueAtTime(fundamental*ratio,t);
+   filter.type='lowpass';filter.frequency.setValueAtTime(5200,t);
+   g.gain.setValueAtTime(.0001,t);
+   g.gain.exponentialRampToValueAtTime(level,t+.035);
+   g.gain.setValueAtTime(level,t+duration*.55);
+   g.gain.exponentialRampToValueAtTime(.0001,t+duration);
+   o.connect(filter);filter.connect(g);g.connect(ctx.destination);
+   o.start(t);o.stop(t+duration+.03);
+  });
+ }catch(e){$('status').textContent='Sound unavailable — check browser audio settings'}
+}
 function elapsedNow(){return elapsed+(running?performance.now()-started:0)}
-function update(){let e=elapsedNow();$('clock').textContent=fmt(e);[[120000,1],[150000,2],[180000,3]].forEach(([at,k])=>{if(e>=at&&!fired.has(k)){fired.add(k);sound(k);$('b'+k).classList.add('done');$('status').textContent=k===1?'2 minutes — short bell':k===2?'2 minutes 30 seconds — start concluding':'3 minutes — time is over';if(k===3)saveTime()}});if(running)raf=requestAnimationFrame(update)}
+function update(){let e=elapsedNow();$('clock').textContent=fmt(e);[[120000,1],[150000,2],[180000,3]].forEach(([at,k])=>{if(e>=at&&!fired.has(k)){fired.add(k);sound(k);$('b'+k).classList.add('done');$('status').textContent=k===1?'2 minutes — short bell':k===2?'2 minutes 30 seconds — start concluding':'3 minutes — time is over; timer continues'}});if(running)raf=requestAnimationFrame(update)}
 function start(){if(!name.trim()||running||hasRun)return;running=true;started=performance.now();$('status').textContent='Speaking…';$('start').textContent='Running';$('stop').disabled=false;$('reset').disabled=false;raf=requestAnimationFrame(update)}
 function saveTime(){if(!hasRun){elapsed=180000;running=false;hasRun=true;cancelAnimationFrame(raf);records.push({name:name.trim(),ms:elapsed});localStorage.setItem('candidateSpeakingTimes',JSON.stringify(records));$('status').textContent='3 minutes — time saved';$('start').disabled=true;$('stop').disabled=true;render()}}
 function stop(){if(!running)return;elapsed=elapsedNow();running=false;cancelAnimationFrame(raf);hasRun=true;records.push({name:name.trim(),ms:elapsed});localStorage.setItem('candidateSpeakingTimes',JSON.stringify(records));$('status').textContent='Time saved: '+fmt(elapsed);$('start').disabled=true;$('stop').disabled=true;render();$('clock').textContent=fmt(elapsed)}
